@@ -8,10 +8,10 @@ use Data::Dumper;
 
 $| = 1;
 
-use_ok('PerfectCR');
+use_ok('OCR::PerfectCR');
 
-my $pcr = PerfectCR->new();
-isa_ok($pcr, 'PerfectCR');
+my $pcr = OCR::PerfectCR->new();
+isa_ok($pcr, 'OCR::PerfectCR');
 
 can_ok($pcr, 'recognise');
 can_ok($pcr, 'recognize');

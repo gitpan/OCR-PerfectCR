@@ -1,7 +1,7 @@
 package OCR::PerfectCR;
 
 # ABOVE the 'use strict' line!
-$VERSION = 0.01;
+$VERSION = 0.02;
 
 use warnings;
 use strict;
@@ -59,7 +59,7 @@ sub load_charmap_file {
   my $filename = shift;
   
   # print "load_charmap_file($self, $filename);\n";
-    
+  
   my $charmapfile = IO::File->new("<".$filename) or 
     croak "Couldn't open $filename: $!";
   binmode($charmapfile, ':utf8');
@@ -165,8 +165,7 @@ sub charimage {
     ($image, my $this) = image_to_grey($image);
     
     # printf "Got char image, size %d by %d\n", $image->getBounds;
-    my $png = $image->png;
-    my $md5 = md5_hex($png);
+    my $md5 = imagesum($image);
     $this->{md5} = $md5;
     if (!exists $recognizer->{charmap}{$md5}) {
 	$recognizer->{charmap}{$md5} = "\x{FFFD}";
@@ -174,8 +173,8 @@ sub charimage {
 	# print "First time!\n";
 	
 	my $file = IO::File->new(">$md5.png") or die "Couldn't create $md5.png: $!";
-	$file->binmode;
-	$file->print($png);
+	binmode($file);
+	$file->print($image->png);
     }
     
     #print "Known character: $images{$md5}\n";
@@ -372,4 +371,26 @@ sub gdextract {
   $outimage->copy($inimage, 0, 0, $x1, $y1, $width, $height);
 
   return $outimage;
+}
+
+# It appears that GD's ->png method doesn't always return exactly the
+# same string for the same image -- it depends on the version of GD,
+# or of libpng, or of libz, or... something.  I want charmap files to
+# be portable, so I need a portable method, so we define our own.  It
+# doesn't have to be small, just portable.
+#
+# Note to self: Everything should be packed N -- big-endian (network) u32.
+sub imagesum {
+  my ($img) = @_;
+  my $str;
+  my ($w, $h) = $img->getBounds;
+
+  $str = pack('NN', $w, $h);
+  for my $x (0..$w) {
+    for my $y (0..$h) {
+      $str .= pack('NNN', $img->rgb($img->getPixel($x, $y)));
+    }
+  }
+
+  return md5_hex($str);
 }

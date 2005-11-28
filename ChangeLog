@@ -1,3 +1,14 @@
+0.02 -- 2005-11-25
+  -- Correct a stupid error -- I uploaded a not-the-most-recent tarball.
+  -- Turns out that the PNG files made by GD aren't as portable as I'd 
+	like -- that is, it doesn't produce exactly byte-for-byte the same png
+	when run on the same image on different computers... so the md5 sums 
+	are no longer based on the PNG, but on my own image format.  This 
+	makes charmap files portable between computers.  (But not compatable 
+	with charmaps from 0.01, which shouldn't be a problem, as it was only 
+	out for 4 days.)
+  -- inc version
+
 0.01 -- 2005-11-21
   -- This is the initial revision.  There are no changes.
 
