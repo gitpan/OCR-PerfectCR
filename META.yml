@@ -1,6 +1,6 @@
 ---
 name: OCR-PerfectCR
-version: 0.02
+version: 0.03
 author:
   - James Mastros <james@mastros.biz>
 abstract: Perfect OCR (if you have perfect input).
@@ -16,5 +16,5 @@ requires:
 provides:
   OCR::PerfectCR:
     file: lib/OCR/PerfectCR.pm
-    version: 0.02
+    version: 0.03
 generated_by: Module::Build version 0.2611

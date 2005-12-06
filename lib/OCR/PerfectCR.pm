@@ -1,7 +1,7 @@
 package OCR::PerfectCR;
 
 # ABOVE the 'use strict' line!
-$VERSION = 0.02;
+$VERSION = 0.03;
 
 use warnings;
 use strict;
@@ -17,13 +17,13 @@ OCR::PerfectCR - Perfect OCR (if you have perfect input).
 
 =head1 SYNOPSIS
 
-	use OCR::PerfectCR;
-	use GD;
-
+    use OCR::PerfectCR;
+    use GD;
+    
     my $recognizer = OCR::PerfectCR->new;
     $recognizer->load_charmap_file("charmap");
-	my $image = GD::Image->new("example.png") or die "Can't open example.png: $!";
-	my $string = join '', map {$_->{str}} $recognizer->recognize($image);
+    my $image = GD::Image->new("example.png") or die "Can't open example.png: $!";
+    my $string = $recognizer->recognize($image);
     $recognizer->save_charmap_file("charmap");
 
 
@@ -159,41 +159,53 @@ Thanks, castaway, for being you, and diotalevi for a detailed review.
 
 ### Internal functions below here.
 sub charimage {
-    my ($recognizer, $image) = @_;
+  my ($recognizer, $image, @bgrgb) = @_;
+  
+  # print "charimage($recognizer, $image)\n";
+  ($image, my $this) = image_to_grey($image, @bgrgb);
+  
+  # printf "Got char image, size %d by %d\n", $image->getBounds;
+  my $md5 = imagesum($image);
+  $this->{md5} = $md5;
+  if (!exists $recognizer->{charmap}{$md5}) {
+    $recognizer->{charmap}{$md5} = "\x{FFFD}";
+    # print  "md5: $md5\n";
+    # print "First time!\n";
     
-    # print "charimage($recognizer, $image)\n";
-    ($image, my $this) = image_to_grey($image);
-    
-    # printf "Got char image, size %d by %d\n", $image->getBounds;
-    my $md5 = imagesum($image);
-    $this->{md5} = $md5;
-    if (!exists $recognizer->{charmap}{$md5}) {
-	$recognizer->{charmap}{$md5} = "\x{FFFD}";
-	# print  "md5: $md5\n";
-	# print "First time!\n";
-	
-	my $file = IO::File->new(">$md5.png") or die "Couldn't create $md5.png: $!";
-	binmode($file);
-	$file->print($image->png);
-    }
-    
-    #print "Known character: $images{$md5}\n";
-    #print $images{$md5};
-    $this->{str} = $recognizer->{charmap}{$md5};
-    
-    return $this;
+    my $file = IO::File->new(">$md5.png") or die "Couldn't create $md5.png: $!";
+    binmode($file);
+    $file->print($image->png);
+  }
+  
+  #print "Known character: $images{$md5}\n";
+  #print $images{$md5};
+  $this->{str} = $recognizer->{charmap}{$md5};
+  
+  return $this;
 }
 
+my %rgb255_to_hsv;
 sub RGB255_to_HSV {
-  return @{Graphics::ColorObject->new_RGB255(\@_, space=>'PAL')->as_HSV};
+  my ($r, $g, $b) = @_;
+  my $rgb = $r * 0x10000 + $g*0x100 + $b;
+  if (!exists $rgb255_to_hsv{$rgb}) {
+    $rgb255_to_hsv{$rgb} = Graphics::ColorObject->new_RGB255(\@_, space=>'PAL')->as_HSV;
+  }
+  return @{$rgb255_to_hsv{$rgb}};
 }
 
+my %hsv_to_rgb255;
 sub HSV_to_RGB255 {
-  return @{Graphics::ColorObject->new_HSV(\@_, space=>'PAL')->as_RGB255};
+  my ($h, $s, $v) = @_;
+  my $hsv = "$h,$s,$v";
+  if (!exists $hsv_to_rgb255{$hsv}) {
+    $hsv_to_rgb255{$hsv} = Graphics::ColorObject->new_HSV(\@_, space=>'PAL')->as_RGB255;
+  }
+  return @{$hsv_to_rgb255{$hsv}};
 }
 
 sub image_to_grey {
-  my $colorimage = shift;
+  my ($colorimage, @bgrgb) = @_;
   my $totalweight = 0;
   my $totalcolor = 0;
   my $maxval = 0;
@@ -202,12 +214,14 @@ sub image_to_grey {
   my $bwimage = GD::Image->new($width, $height);
   my $black   = $bwimage->colorResolve(0, 0, 0);
   my $white   = $bwimage->colorResolve(255, 255, 255);
-  
-  
+
   # Squash to greyscale; figure out what the whitest pixel value is.
   foreach my $x (0..$width) {
     foreach my $y (0..$height) {
       my ($r, $g, $b) = $colorimage->rgb($colorimage->getPixel($x, $y));
+      $r = abs($r - $bgrgb[0]);
+      $g = abs($g - $bgrgb[1]);
+      $b = abs($b - $bgrgb[1]);
       my ($h, $s, $v) = RGB255_to_HSV($r, $g, $b);
       $totalweight += $s;
       $totalcolor  += $h * $s;
@@ -219,6 +233,9 @@ sub image_to_grey {
   foreach my $x (0..$width) {
     foreach my $y (0..$height) {
       my ($r, $g, $b) = $colorimage->rgb($colorimage->getPixel($x, $y));
+      $r = abs($r - $bgrgb[0]);
+      $g = abs($g - $bgrgb[1]);
+      $b = abs($b - $bgrgb[1]);
       my ($h, $s, $v) = RGB255_to_HSV($r, $g, $b);
       if ($v/$maxval > .5) {
         $bwimage->setPixel($x, $y, $white);
@@ -233,132 +250,138 @@ sub image_to_grey {
   my $avgcolor = sprintf("%.0f", $totalcolor/$totalweight);
   $avgcolor = undef if $totalweight < 1;
 
-  return $bwimage, {color => $avgcolor};
+  return $bwimage, {color => $avgcolor, bgrgb=>\@bgrgb};
 }
 
 sub chopup {
-    my ($recognizer, $inimage, $imagefunc) = @_;
-    # print "chopup($recognizer, $inimage, $imagefunc);\n";
-    my @string;
-    
-    my $bgcolor = $inimage->getPixel(0,0);
-    # print "Background color at index $bgcolor\n";
-    my ($width, $height) = $inimage->getBounds;
-    
-    my $mincol=0;
-    while ($mincol < $width) {
-	my ($startcol, $endcol);
-	# print "Finding bounds starting at $mincol\n";
+  my ($recognizer, $inimage, $imagefunc) = @_;
+  # print "chopup($recognizer, $inimage, $imagefunc);\n";
+  my @string;
+  
+  my $bgcolor = $inimage->getPixel(0,0);
+  my (@bgrgb) = $inimage->rgb($bgcolor);
+  print "Background color at index $bgcolor [@bgrgb]\n";
+  my ($width, $height) = $inimage->getBounds;
+  
+  my $mincol=0;
+  while ($mincol <= $width) {
+    my ($startcol, $endcol);
+    print "Finding bounds starting at $mincol\n";
 
-	# Find left and right char boundry.
-	for my $col ($mincol .. $width-1) {
-	    # print "Column $col: ";
-	    my $hasnonbg=0;
-	    for my $row (0 .. $height-1) {
-		if ($inimage->getPixel($col, $row) != $bgcolor) {
-		    $hasnonbg=1;
-		    last;
-		}
-	    }
-	    # print "$hasnonbg\n";
-	    
-	    if (not defined $startcol) {
-		if ($hasnonbg) {
-		    $startcol = $col;
-		}
-	    } else {
-		if (!$hasnonbg) {
-		    $endcol = $col;
-		    last;
-		}
-	    }
-	}
-	
-	if (not defined $startcol or not defined $endcol) {
-	    # print "Couldn't find anything\n";
-	    last;
-	}
-	
-	
-	my ($startrow, $endrow);
-
-	# Find top boundry
-	for my $row (0..$height) {
-	    my $hasnonbg=0;
-	    for my $col ($startcol..$endcol) {
-		if ($inimage->getPixel($col, $row) != $bgcolor) {
-		    $hasnonbg=1;
-		    last;
-		}
-	    }
-	    if ($hasnonbg) {
-		$startrow = $row;
-		last;
-	    }
-	}
-	
-	# Find bottom boundry.
-	for my $row (reverse(0..$height-1)) {
-	  my $hasnonbg=0;
-	    for my $col ($startcol..$endcol) {
-		if ($inimage->getPixel($col, $row) != $bgcolor) {
-		    $hasnonbg=1;
-		    last;
-		}
-	    }
-	    if ($hasnonbg) {
-		$endrow = $row;
-		last;
-	    }
-	}
-	
-	# print "Character at ($startcol, $startrow)-($endcol, $endrow)\n";
-	my $charimage = gdextract($inimage, $startcol, $startrow, $endcol, $endrow);
-	my $this = $imagefunc->($recognizer, $charimage);
-	$this->{prespace} = $startcol - $mincol;
-	$this->{startcol} = $startcol;
-	# $this->{mincol} = $mincol;
-	$this->{endcol} = $endcol;
-	$this->{width} = $endcol - $startcol;
-	$this->{chrwidth} = ($endcol - $startcol)/length($this->{str});
-	push @string, $this;
-	
-	$mincol = $endcol;
+    # Find left and right char boundry.
+    for my $col ($mincol .. $width-1) {
+      # print "Column $col: ";
+      my $hasnonbg=0;
+      for my $row (0 .. $height-1) {
+        if ($inimage->getPixel($col, $row) != $bgcolor) {
+          $hasnonbg=1;
+          last;
+        }
+      }
+      # print "$hasnonbg\n";
+      
+      if (not defined $startcol) {
+        if ($hasnonbg) {
+          $startcol = $col;
+        }
+      } else {
+        if (!$hasnonbg) {
+          $endcol = $col;
+          last;
+        }
+      }
     }
     
-    # print "\n";
-    
-#   for (1..$#string-1) {
-#     my $prev = $string[$_-1];
-#     my $this = $string[$_];
-    
-#     print "Chars:      $prev->{str} -- $this->{str}\n";
-#     print "Charwidths: $prev->{chrwidth} -- $this->{chrwidth}\n";
-#     print "Prespace:     $this->{prespace}\n";
-#     print ("Metric: ", (($prev->{chrwidth}+$this->{chrwidth})/2)/$this->{prespace}, "\n");
-    
-#   }
+    if (not defined $endcol) {
+      $endcol = $width-1;
+    }
 
-    # Insert spaces.
-    @string = map {
-	# The "6" here is mostly just a guess.
-	# The ne '.' is just to fix up a common situation in the purticular
-	# source I checked against the most.
-	if ($_->{prespace} > $height/6 
-	    and $_->{str} ne '.') {
-		({str=>" ", fake=>1}, $_);
-	    } else {
-		$_;
-	    }
-    } @string;
+    if (not defined $startcol or
+        $startcol >= $endcol) {
+      # print "Couldn't find anything\n";
+      last;
+    }
     
-    # print "Finished: ", join('', map { $_->{str} } @string), "\n";
+    
+    my ($startrow, $endrow);
 
-    if (wantarray) {
-	return @string;
+    # Find top boundry
+    for my $row (0..$height-1) {
+      my $hasnonbg=0;
+      for my $col ($startcol..$endcol) {
+        if ($inimage->getPixel($col, $row) != $bgcolor) {
+          $hasnonbg=1;
+          last;
+        }
+      }
+      if ($hasnonbg) {
+        $startrow = $row;
+        last;
+      }
+    }
+    
+    # Find bottom boundry.
+    for my $row (reverse(0..$height-1)) {
+      my $hasnonbg=0;
+      for my $col ($startcol..$endcol) {
+        if ($inimage->getPixel($col, $row) != $bgcolor) {
+          $hasnonbg=1;
+          last;
+        }
+      }
+      if ($hasnonbg) {
+        $endrow = $row;
+        last;
+      }
+    }
+    
+    print "Character at ($startcol, $startrow)-($endcol, $endrow)\n";
+    my $charimage = gdextract($inimage, $startcol, $startrow, $endcol, $endrow);
+    my $this = $imagefunc->($recognizer, $charimage, @bgrgb);
+    $this->{prespace} = $startcol - $mincol;
+    $this->{startcol} = $startcol;
+    # $this->{mincol} = $mincol;
+    $this->{endcol} = $endcol;
+    $this->{width} = $endcol - $startcol;
+    $this->{chrwidth} = ($endcol - $startcol)/length($this->{str});
+    push @string, $this;
+    
+    $mincol = $endcol;
+  }
+  
+  # print "\n";
+  
+  #   for (1..$#string-1) {
+  #     my $prev = $string[$_-1];
+  #     my $this = $string[$_];
+  
+  #     print "Chars:      $prev->{str} -- $this->{str}\n";
+  #     print "Charwidths: $prev->{chrwidth} -- $this->{chrwidth}\n";
+  #     print "Prespace:     $this->{prespace}\n";
+  #     print ("Metric: ", (($prev->{chrwidth}+$this->{chrwidth})/2)/$this->{prespace}, "\n");
+  
+  #   }
+
+  # Insert spaces.
+  @string = map {
+    # The "6" here is mostly just a guess.
+    # The ne '.' is just to fix up a common situation in the purticular
+    # source I checked against the most.
+    if ($_->{prespace} > $height/6 
+        and $_->{str} ne '.') {
+      ({str=>" ", fake=>1}, $_);
     } else {
-	return join "", map { $_->{str} } @string;
+      $_;
     }
+  } @string;
+  
+  # print "Finished: ", join('', map { $_->{str} } @string), "\n";
+
+  if (wantarray) {
+    return @string;
+  } else {
+    return join "", map { $_->{str} } @string;
+  }
 }
 
 # Just a silly helper
@@ -394,3 +417,5 @@ sub imagesum {
 
   return md5_hex($str);
 }
+
+1;

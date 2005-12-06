@@ -1,7 +1,7 @@
 #!/usr/bin/perl
 
 use lib 'lib';
-use Test::More tests => 27;
+use Test::More tests => 28;
 use strict;
 use warnings;
 use Data::Dumper;
@@ -24,7 +24,10 @@ my $testimage = GD::Image->new('t/1.png');
 isa_ok($testimage, 'GD::Image');
 
 my $parsed = $pcr->recognize($testimage);
-is($parsed, " about it.", "Scalar context recognize");
+is($parsed, " about it.", "Scalar context recognize (1)");
+
+$parsed = $pcr->recognize(GD::Image->new('t/2.png'));
+is($parsed, "about it.", "Scalar context recognize (2)");
 
 my @parsed = $pcr->recognize($testimage);
 my $d= Dumper \@parsed;
@@ -35,10 +38,10 @@ is(0+@parsed, 10, 'List parse correct length');
 
 my @str = split //, ' about it.';
 for (0..$#parsed) {
-    is($parsed[$_]{str}, $str[$_], "List parse char $_ has correct str.");
-    if ($parsed[$_]{str} ne ' ') {
-	is($parsed[$_]{color}, 180, "List parse char $_ has correct color.");
-    }
+  is($parsed[$_]{str}, $str[$_], "List parse char $_ has correct str.");
+  if ($parsed[$_]{str} ne ' ') {
+    is($parsed[$_]{color}, 180, "List parse char $_ has correct color.");
+  }
 }
 
 $pcr->save_charmap_file('t/charmap2');

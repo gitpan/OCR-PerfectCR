@@ -6,6 +6,7 @@ MANIFEST			This list of files
 META.yml
 t/01perfectcr.t
 t/02pod.t
+t/03dist.t
 t/1.png
+t/2.png
 t/charmap
-t/charmap2
